@@ -71,14 +71,13 @@ jobs:
                   "echo \"ECR_REPOSITORY_NGINX=${{ secrets.ECR_REPOSITORY_NGINX }}\" >> /home/ec2-user/app/.env",
                   "echo \"IMAGE_TAG=${{ github.sha }}\" >> /home/ec2-user/app/.env",
                   
-                  "aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}",
-                  
                   "cd /home/ec2-user/app",
-                  "docker-compose down || true", 
-                  "docker rmi -f $(docker images -q) || true",
+                  "docker-compose down --remove-orphans",
+                  "aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}",
+                  "docker-compose pull",
+                  "docker-compose up -d",
 
-                  "docker compose pull",
-                  "docker compose up -d --remove-orphans",
+                  "docker rmi -f $(docker images -q) || true",
                   "rm -f /home/ec2-user/docker-compose.yaml",
                   "rm -f /home/ec2-user/nginx/Dockerfile",
                   "docker image prune -f"
