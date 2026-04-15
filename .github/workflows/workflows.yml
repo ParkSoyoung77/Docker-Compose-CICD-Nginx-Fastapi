@@ -1,0 +1,86 @@
+name: Auto-Scaling-Multi-Container-Deployment
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # 1. 설정 파일 및 정적 자산 S3 업로드 (배포 시 EC2가 다운로드할 용도)
+      - name: Upload Config and Assets to S3
+        run: |
+          aws s3 cp ./docker-compose.yaml s3://${{ secrets.S3_BUCKET_NAME }}/docker-compose.yaml
+          aws s3 cp ./nginx/default.conf s3://${{ secrets.S3_BUCKET_NAME }}/conf.d/default.conf
+          aws s3 sync ./nginx/html/ s3://${{ secrets.S3_BUCKET_NAME }}/html/ --delete
+
+      # 2. ECR 로그인
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 3. FastAPI 및 Nginx 각각 빌드 및 푸시
+      - name: Build and push Docker images to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPO_FASTAPI: ${{ secrets.ECR_REPOSITORY_FASTAPI }}
+          REPO_NGINX: ${{ secrets.ECR_REPOSITORY_NGINX }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$REPO_FASTAPI:$IMAGE_TAG ./fastapi
+          docker build -t $ECR_REGISTRY/$REPO_FASTAPI:latest ./fastapi
+
+          docker push $ECR_REGISTRY/$REPO_FASTAPI:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$REPO_FASTAPI:latest
+          
+          docker build -t $ECR_REGISTRY/$REPO_NGINX:$IMAGE_TAG ./nginx
+          docker build -t $ECR_REGISTRY/$REPO_NGINX:latest ./nginx
+
+          docker push $ECR_REGISTRY/$REPO_NGINX:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$REPO_NGINX:latest
+
+      # 4. AWS SSM을 사용하여 ASG 내의 모든 인스턴스에 배포 명령 하달
+      - name: Deploy to EC2 using SSM
+        run: |
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=tag:${{ secrets.ASG_TAG_KEY }},Values=${{ secrets.ASG_TAG_VALUE }}" \
+            --region ${{ secrets.AWS_REGION }} \
+            --parameters '{
+                "commands": [             
+                  "mkdir -p /home/ec2-user/app/nginx/html /home/ec2-user/app/nginx/conf.d /home/ec2-user/app/nginx/logs",
+                  "chown -R ec2-user:ec2-user /home/ec2-user/app",
+
+                  "aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/docker-compose.yaml /home/ec2-user/app/docker-compose.yaml",
+                  "aws s3 cp s3://${{ secrets.S3_BUCKET_NAME }}/conf.d/default.conf /home/ec2-user/app/nginx/conf.d/default.conf",
+                  "aws s3 sync s3://${{ secrets.S3_BUCKET_NAME }}/html/ /home/ec2-user/app/nginx/html/ --delete",
+                  
+                  "echo \"ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}\" > /home/ec2-user/app/.env",
+                  "echo \"REPO_FASTAPI=${{ secrets.ECR_REPOSITORY_FASTAPI }}\" >> /home/ec2-user/app/.env",
+                  "echo \"REPO_NGINX=${{ secrets.ECR_REPOSITORY_NGINX }}\" >> /home/ec2-user/app/.env",
+                  "echo \"IMAGE_TAG=${{ github.sha }}\" >> /home/ec2-user/app/.env",
+                  
+                  "aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}",
+                  
+                  "cd /home/ec2-user/app",
+                  "docker-compose down || true", 
+                  "docker rmi -f $(docker images -q) || true",
+
+                  "docker compose pull",
+                  "docker compose up -d --remove-orphans",
+                  "rm -f /home/ec2-user/docker-compose.yaml",
+                  "rm -f /home/ec2-user/nginx/Dockerfile",
+                  "docker image prune -f"
+                ]
+              }'
