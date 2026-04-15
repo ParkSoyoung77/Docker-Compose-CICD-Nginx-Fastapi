@@ -34,21 +34,21 @@ jobs:
       - name: Build and push Docker images to ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          REPO_FASTAPI: ${{ secrets.ECR_REPOSITORY_FASTAPI }}
-          REPO_NGINX: ${{ secrets.ECR_REPOSITORY_NGINX }}
+          ECR_REPOSITORY_FASTAPI: ${{ secrets.ECR_REPOSITORY_FASTAPI }}
+          ECR_REPOSITORY_NGINX: ${{ secrets.ECR_REPOSITORY_NGINX }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$REPO_FASTAPI:$IMAGE_TAG ./fastapi
-          docker build -t $ECR_REGISTRY/$REPO_FASTAPI:latest ./fastapi
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_FASTAPI:$IMAGE_TAG ./fastapi
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_FASTAPI:latest ./fastapi
 
-          docker push $ECR_REGISTRY/$REPO_FASTAPI:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$REPO_FASTAPI:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_FASTAPI:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_FASTAPI:latest
           
-          docker build -t $ECR_REGISTRY/$REPO_NGINX:$IMAGE_TAG ./nginx
-          docker build -t $ECR_REGISTRY/$REPO_NGINX:latest ./nginx
+          docker build -t $ECR_REGISTRY/$RECR_REPOSITORY_NGINX:$IMAGE_TAG ./nginx
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_NGINX:latest ./nginx
 
-          docker push $ECR_REGISTRY/$REPO_NGINX:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$REPO_NGINX:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_NGINX:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_NGINX:latest
 
       # 4. AWS SSM을 사용하여 ASG 내의 모든 인스턴스에 배포 명령 하달
       - name: Deploy to EC2 using SSM
@@ -67,8 +67,8 @@ jobs:
                   "aws s3 sync s3://${{ secrets.S3_BUCKET_NAME }}/html/ /home/ec2-user/app/nginx/html/ --delete",
                   
                   "echo \"ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}\" > /home/ec2-user/app/.env",
-                  "echo \"REPO_FASTAPI=${{ secrets.ECR_REPOSITORY_FASTAPI }}\" >> /home/ec2-user/app/.env",
-                  "echo \"REPO_NGINX=${{ secrets.ECR_REPOSITORY_NGINX }}\" >> /home/ec2-user/app/.env",
+                  "echo \"ECR_REPOSITORY_FASTAPI=${{ secrets.ECR_REPOSITORY_FASTAPI }}\" >> /home/ec2-user/app/.env",
+                  "echo \"ECR_REPOSITORY_NGINX=${{ secrets.ECR_REPOSITORY_NGINX }}\" >> /home/ec2-user/app/.env",
                   "echo \"IMAGE_TAG=${{ github.sha }}\" >> /home/ec2-user/app/.env",
                   
                   "aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}",
