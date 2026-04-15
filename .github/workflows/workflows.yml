@@ -44,7 +44,7 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY_FASTAPI:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY_FASTAPI:latest
           
-          docker build -t $ECR_REGISTRY/$RECR_REPOSITORY_NGINX:$IMAGE_TAG ./nginx
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_NGINX:$IMAGE_TAG ./nginx
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_NGINX:latest ./nginx
 
           docker push $ECR_REGISTRY/$ECR_REPOSITORY_NGINX:$IMAGE_TAG
